@@ -597,6 +597,68 @@ export class AuthClient {
     return res;
   }
 
+  async handleDeviceCallback(
+    req: NextRequest,
+    opts: { returnTo: string; tokenExchangeResponse: Response }
+  ): Promise<NextResponse> {
+    const onCallbackCtx: OnCallbackContext = {
+      returnTo: opts.returnTo ?? "/"
+    };
+
+    const [discoveryError, authorizationServerMetadata] =
+      await this.discoverAuthorizationServerMetadata();
+
+    if (discoveryError) {
+      return this.onCallback(discoveryError, onCallbackCtx, null);
+    }
+
+    const oidcRes = await oauth.processAuthorizationCodeResponse(
+      authorizationServerMetadata,
+      this.clientMetadata,
+      opts.tokenExchangeResponse,
+      {
+        requireIdToken: true
+      }
+    );
+
+    const idTokenClaims = oauth.getValidatedIdTokenClaims(oidcRes)!;
+    let session: SessionData = {
+      user: idTokenClaims,
+      tokenSet: {
+        accessToken: oidcRes.access_token,
+        idToken: oidcRes.id_token,
+        scope: oidcRes.scope,
+        refreshToken: oidcRes.refresh_token,
+        expiresAt: Math.floor(Date.now() / 1000) + Number(oidcRes.expires_in)
+      },
+      internal: {
+        sid: idTokenClaims.sid as string,
+        createdAt: Math.floor(Date.now() / 1000)
+      }
+    };
+
+    const res = await this.onCallback(null, onCallbackCtx, session);
+
+    if (this.beforeSessionSaved) {
+      const updatedSession = await this.beforeSessionSaved(
+        session,
+        oidcRes.id_token ?? null
+      );
+      session = {
+        ...updatedSession,
+        internal: session.internal
+      };
+    } else {
+      session.user = filterDefaultIdTokenClaims(idTokenClaims);
+    }
+
+    await this.sessionStore.set(req.cookies, res.cookies, session, true);
+    addCacheControlHeadersForSession(res);
+    // await this.transactionStore.delete(res.cookies, state);
+
+    return res;
+  }
+
   async handleProfile(req: NextRequest): Promise<NextResponse> {
     const session = await this.sessionStore.get(req.cookies);
 

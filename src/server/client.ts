@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { cookies } from "next/headers.js";
 import { NextRequest, NextResponse } from "next/server.js";
 import { NextApiRequest, NextApiResponse } from "next/types.js";
+import * as oauth from "oauth4webapi";
 
 import {
   AccessTokenError,
@@ -659,6 +660,13 @@ export class Auth0Client {
         }
       }
     }
+  }
+
+  async handleDeviceCallback(
+    req: NextRequest,
+    opts: { returnTo: string; tokenExchangeResponse: Response }
+  ): Promise<NextResponse> {
+    return this.authClient.handleDeviceCallback(req, opts);
   }
 
   private createRequestCookies(req: PagesRouterRequest) {
